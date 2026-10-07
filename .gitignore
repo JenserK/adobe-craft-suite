@@ -1,0 +1,18 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Rust target directories
+target/
+**/target/
+
+# Node / Web artifacts
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
