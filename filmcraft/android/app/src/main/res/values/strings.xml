@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FilmCraft</string>
+    <string name="title_activity_main">FilmCraft</string>
+    <string name="package_name">ai.storyteller.filmcraft</string>
+    <string name="custom_url_scheme">ai.storyteller.filmcraft</string>
+</resources>

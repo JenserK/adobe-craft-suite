@@ -1,0 +1,10 @@
+# Netlify deployment of FilmCraft (browser build). Repo root is the Netlify base;
+# the app lives in filmcraft/.
+[build]
+  base    = "filmcraft"
+  command = "bash scripts/build-web.sh --ci"
+  publish = "web-dist"
+
+[build.environment]
+  # Cargo's registry and target dir are cached between Netlify builds under $HOME / base.
+  CARGO_TARGET_DIR = "/opt/build/cache/filmcraft-target"

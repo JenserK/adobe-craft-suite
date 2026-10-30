@@ -1,0 +1,13 @@
+{
+  "appId": "ai.storyteller.filmcraft",
+  "appName": "FilmCraft",
+  "webDir": "web-dist",
+  "backgroundColor": "#1b1c1f",
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#1b1c1f"
+  }
+}

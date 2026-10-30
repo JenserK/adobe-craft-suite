@@ -5,3 +5,14 @@ plan/
 /log
 .DS_Store
 .claude/worktrees/
+
+# Capacitor / web build
+/web-dist
+node_modules/
+/android/app/build
+/android/.gradle
+/android/local.properties
+/android/capacitor-cordova-android-plugins
+/android/app/src/main/assets/public
+/ios/App/Pods
+/ios/App/App/public
