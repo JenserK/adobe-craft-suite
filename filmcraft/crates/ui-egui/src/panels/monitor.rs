@@ -26,7 +26,9 @@ pub enum Which {
 pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, which: Which) {
     let t = app.tokens;
     let ctx = ui.ctx().clone();
-    let controls_h = 28.0 + 24.0 + 36.0;
+    // Phone layout: the picture only; the transport lives in the bar below it (`mobile.rs`).
+    let compact = app.mobile.compact_monitor && which == Which::Program;
+    let controls_h = if compact { 0.0 } else { 28.0 + 24.0 + 36.0 };
     let video_area = Rect::from_min_max(rect.min + vec2(4.0, 4.0), pos2(rect.max.x - 4.0, rect.max.y - controls_h));
     // the Source monitor's time ruler starts at `origin` (a subclip restricted to its range)
     let mut origin = Tick::ZERO;
@@ -255,6 +257,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, which: Which)
         app.ui.status = name.clone();
     }
 
+    if compact {
+        return;
+    }
     // ---- controls row: timecode | zoom | res | wrench | duration
     let row1 = Rect::from_min_size(pos2(rect.min.x + 14.0, rect.max.y - controls_h + 2.0), vec2(rect.width() - 28.0, 26.0));
     let tc = format_time(time, rate, drop_frame, TimeDisplay::Timecode, 48000);

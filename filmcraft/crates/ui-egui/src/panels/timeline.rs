@@ -921,6 +921,8 @@ fn patch_button(ui: &mut egui::Ui, r: Rect, clip: Rect, label: &str, on: bool, s
 #[allow(clippy::too_many_arguments)]
 fn draw_headers(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, rows: &[Row], rect: Rect, vclip: Rect, aclip: Rect, t: &Tokens) {
     let hw = app.ui.timeline.header_w;
+    // Phone layout: a narrow header with the patch, lock and one output toggle only.
+    let compact = hw < 150.0;
     let tg = app.session.targeting();
     let mut actions: Vec<(String, Value)> = Vec::new();
     let mut vo_action = None;
@@ -968,20 +970,31 @@ fn draw_headers(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, rows:
         // 3. target
         let targeted = tg.targeted.contains(&r.track);
         let trr = btn_rect(61.0);
-        app.auto.add(&format!("timeline.track.{label}.target"), trr, "Toggle track targeting");
-        if patch_button(ui, trr, visible, &label, targeted, true, egui::Id::new(("target", r.track.0)), t).clicked() {
-            actions.push(("timeline.setTargeting".into(), json!({"track": r.track.0, "targeted": !targeted})));
+        if !compact {
+            app.auto.add(&format!("timeline.track.{label}.target"), trr, "Toggle track targeting");
+            if patch_button(ui, trr, visible, &label, targeted, true, egui::Id::new(("target", r.track.0)), t).clicked() {
+                actions.push(("timeline.setTargeting".into(), json!({"track": r.track.0, "targeted": !targeted})));
+            }
         }
         // 4. upper line icons
-        let mut x = 102.0;
-        let sr = small(x, upper_y);
-        let sresp =
-            crate::widgets::icon_toggle(ui, sr.intersect(visible), Icon::SyncLock, tr.sync_lock, t, egui::Id::new(("syncLock", r.track.0)), Some(t.text_dim));
-        app.auto.add(&format!("timeline.track.{label}.syncLock"), sr, "Toggle Sync Lock");
-        if sresp.clicked() {
-            actions.push(("timeline.setTrack".into(), json!({"track": r.track.0, "syncLock": !tr.sync_lock})));
+        let mut x = if compact { 80.0 } else { 102.0 };
+        if !compact {
+            let sr = small(x, upper_y);
+            let sresp = crate::widgets::icon_toggle(
+                ui,
+                sr.intersect(visible),
+                Icon::SyncLock,
+                tr.sync_lock,
+                t,
+                egui::Id::new(("syncLock", r.track.0)),
+                Some(t.text_dim),
+            );
+            app.auto.add(&format!("timeline.track.{label}.syncLock"), sr, "Toggle Sync Lock");
+            if sresp.clicked() {
+                actions.push(("timeline.setTrack".into(), json!({"track": r.track.0, "syncLock": !tr.sync_lock})));
+            }
+            x += 24.0;
         }
-        x += 24.0;
         if r.kind == TrackKind::Video {
             let er = small(x, upper_y);
             let eresp = crate::widgets::icon_toggle(
@@ -1012,29 +1025,31 @@ fn draw_headers(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, rows:
             if mresp.clicked() {
                 actions.push(("timeline.setTrack".into(), json!({"track": r.track.0, "muted": !tr.muted})));
             }
-            let s2 = Rect::from_center_size(pos2(hrect.min.x + x + 20.0, upper_y), vec2(14.0, 14.0));
-            let so = crate::widgets::letter_toggle(
-                ui,
-                s2.intersect(visible),
-                "S",
-                tr.solo,
-                Color32::from_rgb(0xf0, 0xf0, 0x4f),
-                t,
-                egui::Id::new(("solo", r.track.0)),
-            );
-            app.auto.add(&format!("timeline.track.{label}.solo"), s2, "Solo Track");
-            if so.clicked() {
-                actions.push(("timeline.setTrack".into(), json!({"track": r.track.0, "solo": !tr.solo})));
+            if !compact {
+                let s2 = Rect::from_center_size(pos2(hrect.min.x + x + 20.0, upper_y), vec2(14.0, 14.0));
+                let so = crate::widgets::letter_toggle(
+                    ui,
+                    s2.intersect(visible),
+                    "S",
+                    tr.solo,
+                    Color32::from_rgb(0xf0, 0xf0, 0x4f),
+                    t,
+                    egui::Id::new(("solo", r.track.0)),
+                );
+                app.auto.add(&format!("timeline.track.{label}.solo"), s2, "Solo Track");
+                if so.clicked() {
+                    actions.push(("timeline.setTrack".into(), json!({"track": r.track.0, "solo": !tr.solo})));
+                }
+                let vr = small(x + 42.0, upper_y);
+                if let Some(a) = super::voiceover::header_button(app, ui, r.track, vr, visible, &label, t) {
+                    vo_action = Some(a);
+                }
+                let kr = small(x + 64.0, upper_y);
+                super::timeline_automation::header_button(app, ui, seq, r, kr, visible, &label, t);
             }
-            let vr = small(x + 42.0, upper_y);
-            if let Some(a) = super::voiceover::header_button(app, ui, r.track, vr, visible, &label, t) {
-                vo_action = Some(a);
-            }
-            let kr = small(x + 64.0, upper_y);
-            super::timeline_automation::header_button(app, ui, seq, r, kr, visible, &label, t);
         }
         // 5. name on the lower line (or inline when short)
-        if hrect.height() >= 40.0 {
+        if !compact && hrect.height() >= 40.0 {
             p.text(pos2(hrect.min.x + 94.0, hrect.min.y + 34.0), Align2::LEFT_CENTER, &tr.name, Tokens::ui(11.0), t.text_dim);
         }
         // resize track height by dragging the header's bottom edge

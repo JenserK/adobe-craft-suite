@@ -35,6 +35,34 @@ npm run cap:ios         # opens Xcode (macOS only)
 `capacitor.config.json`: app id `ai.storyteller.filmcraft`, `webDir` = `web-dist`. `android/` and
 `ios/` are committed; the copied web assets inside them are gitignored and recreated by `cap sync`.
 
+## Phone layout
+
+Windows narrower than 720 points (every phone in portrait) get a touch layout instead of the docked
+desktop panels (`crates/ui-egui/src/mobile.rs`):
+
+```
+┌ Undo Redo   title   Export ┐
+│  program monitor (picture) │
+│  Start  Play  End   time   │
+│  timeline (pinch to zoom)  │
+│ + Video + Music Split Trim… │  ← scrollable tool row
+└────────────────────────────┘
+```
+
+- **+ Video** opens the device's file picker (video, photos), imports the pick and appends it to the
+  sequence. A new project gets a sequence with the first clip's size and frame rate.
+- **+ Music** picks a local audio file and puts it at the playhead on its own audio track (a new
+  one when the existing ones are busy), with Sync Lock off so picture edits do not move it.
+- **Split** cuts at the playhead. **Trim in / Trim out** set the start or end of the selected clip
+  (else the clip under the playhead) to the playhead, closing the gap when possible. **Delete**
+  removes it. **Undo / Redo** are in the top bar. Tapping a clip selects it, dragging moves it.
+- **Library** opens the Project bin as a sheet; select items and tap *Add to timeline*.
+- **Export** is a single screen: file name, H.264 MP4 at the sequence size, one button.
+  The result is a browser download.
+
+Wider windows keep the desktop layout. The picker accepts `video/*`, `audio/*` and `image/*` as
+well as the extension list, so phone browsers do not grey files out.
+
 Things to know:
 
 - **Renderer:** WebGPU is not available in most mobile WebViews, so the app falls back to WebGL2

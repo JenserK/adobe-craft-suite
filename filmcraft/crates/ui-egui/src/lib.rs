@@ -17,6 +17,7 @@ pub mod i18n;
 pub mod icons;
 pub mod links;
 pub mod menus;
+pub mod mobile;
 pub mod panels;
 pub mod perf;
 #[cfg(not(target_arch = "wasm32"))]
@@ -211,6 +212,8 @@ pub struct FilmcraftApp {
     /// Settings last applied to the UI (theme, tooltips, frame cache, audio device).
     applied_prefs: Option<filmcraft_engine::autosave::Preferences>,
     workspace_restored: bool,
+    /// Phone layout state ([`mobile`]).
+    pub mobile: mobile::MobileState,
     /// Window ▸ Workspaces: saved layouts ([`dock::WORKSPACES_FILE`] in the data directory).
     pub workspaces: dock::WorkspacePrefs,
     /// Workspace names and the current one, as last handed to the native menu.
@@ -394,6 +397,7 @@ impl FilmcraftApp {
             watched_render: None,
             applied_prefs: None,
             workspace_restored: false,
+            mobile: Default::default(),
             workspaces,
             menu_workspaces: Default::default(),
         }
@@ -896,11 +900,28 @@ impl FilmcraftApp {
                     return Ok(Value::Null);
                 }
                 let r = self.session.execute("file.import", json!({"paths": paths})).map_err(|e| e.to_string());
+                if let Ok(v) = &r {
+                    let items: Vec<u64> = v.get("items").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
+                    self.place_imported(&items);
+                }
                 if let Ok(v) = &r
                     && let Some(errs) = v.get("errors").and_then(Value::as_array)
                     && !errs.is_empty()
                 {
                     self.ui.status = errs.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ");
+                }
+                r
+            }
+            // Phone layout: pick music or sound only
+            "file.importAudio" => {
+                let paths = self.hooks.pick_files.as_mut().map(|f| f(filmcraft_media::AUDIO_EXTENSIONS)).unwrap_or_default();
+                if paths.is_empty() {
+                    return Ok(Value::Null);
+                }
+                let r = self.session.execute("file.import", json!({"paths": paths})).map_err(|e| e.to_string());
+                if let Ok(v) = &r {
+                    let items: Vec<u64> = v.get("items").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
+                    self.place_imported(&items);
                 }
                 r
             }
@@ -1172,6 +1193,10 @@ impl FilmcraftApp {
         let t = self.tokens;
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, t.app_bg);
+        if mobile::is_mobile(full) {
+            mobile::show(self, ui, full);
+            return;
+        }
         let header_h = 38.0;
         let header = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), header_h));
         header::show(self, ui, header);

@@ -127,6 +127,9 @@ pub async fn import_files(files: Vec<web_sys::File>) -> Value {
         let msg = errors.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ");
         crate::post(move |w, _| w.app.status(msg));
     }
+    // A phone-layout add button waits for these items (no-op otherwise).
+    let ids: Vec<u64> = items.iter().filter_map(Value::as_u64).collect();
+    crate::post(move |w, _| w.app.place_imported(&ids));
     json!({"items": items, "errors": errors, "paths": paths})
 }
 
@@ -159,7 +162,13 @@ fn has_fsa_picker() -> bool {
 
 /// Let the user pick files: `showOpenFilePicker` when available, else a file input.
 pub fn pick(exts: &[&str], multiple: bool) {
-    let accept: Vec<String> = exts.iter().map(|e| format!(".{e}")).collect();
+    let mut accept: Vec<String> = exts.iter().map(|e| format!(".{e}")).collect();
+    // Phone browsers grey out files an extension list does not match; MIME wildcards cover them.
+    for (probe, mime) in [("mp4", "video/*"), ("mp3", "audio/*"), ("png", "image/*")] {
+        if exts.contains(&probe) {
+            accept.push(mime.to_string());
+        }
+    }
     if has_fsa_picker() {
         let opts = js_sys::Object::new();
         let _ = js_sys::Reflect::set(&opts, &"multiple".into(), &multiple.into());
