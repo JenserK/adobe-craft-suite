@@ -38,27 +38,32 @@ npm run cap:ios         # opens Xcode (macOS only)
 ## Phone layout
 
 Windows narrower than 720 points (every phone in portrait) get a touch layout instead of the docked
-desktop panels (`crates/ui-egui/src/mobile.rs`):
+desktop panels (`crates/ui-egui/src/mobile.rs`, `mobile_ui.rs`), modelled on Premiere's phone app:
 
 ```
-┌ Undo Redo   title   Export ┐
-│  program monitor (picture) │
-│  Start  Play  End   time   │
-│  timeline (pinch to zoom)  │
-│ + Video + Music Split Trim… │  ← scrollable tool row
-└────────────────────────────┘
+┌ Title                Export ┐
+│     program monitor         │
+│ 0:02.0 / 0:10.0  ⏮ ▶ ⏭  ↶ ↷ │
+│ ──── ruler ───(0:02.0)───── │
+│ [ clip thumbnails ]         │  playhead fixed in the middle
+│ [ audio / music / titles ]  │
+│ Video  Music  Text  Edit  Library │
+└─────────────────────────────┘
 ```
 
-- **+ Video** opens the device's file picker (video, photos), imports the pick and appends it to the
-  sequence. A new project gets a sequence with the first clip's size and frame rate.
-- **+ Music** picks a local audio file and puts it at the playhead on its own audio track (a new
-  one when the existing ones are busy), with Sync Lock off so picture edits do not move it.
-- **Split** cuts at the playhead. **Trim in / Trim out** set the start or end of the selected clip
-  (else the clip under the playhead) to the playhead, closing the gap when possible. **Delete**
-  removes it. **Undo / Redo** are in the top bar. Tapping a clip selects it, dragging moves it.
-- **Library** opens the Project bin as a sheet; select items and tap *Add to timeline*.
-- **Export** is a single screen: file name, H.264 MP4 at the sequence size, one button.
-  The result is a browser download.
+- **Timeline:** drag to scrub, pinch to zoom, tap a clip to select it. A selected clip has white
+  handles: drag an edge to trim it.
+- **Video** opens the device's file picker, imports the pick and appends it to the sequence. A new
+  project gets a sequence with the first clip's size and frame rate.
+- **Music** picks a local audio file and puts it at the playhead on its own audio track (a new one
+  when the existing ones are busy), with Sync Lock off so picture edits do not move it.
+- **Text** adds a title at the playhead. **Library** opens the Project bin as a sheet; select
+  items and tap *Add to timeline*.
+- **Edit** (or tapping a clip) switches the bar to the clip tools: **Split** at the playhead,
+  **Trim in / Trim out** to the playhead, **Delete**, **Done**. Trim and delete close the gap when
+  the other tracks allow it.
+- **Export** is a single screen: file name, H.264 MP4 at the sequence size, one button. The result
+  is a browser download.
 
 Wider windows keep the desktop layout. The picker accepts `video/*`, `audio/*` and `image/*` as
 well as the extension list, so phone browsers do not grey files out.

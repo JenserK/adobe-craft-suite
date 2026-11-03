@@ -1,6 +1,6 @@
-//! Phone layout (narrow windows): program monitor on top, a transport row, the timeline, and a
-//! row of large touch buttons at the bottom (add media, split, trim, delete, music, text, export).
-//! Wider windows keep the docked desktop layout. Automation ids: `mobile.*`.
+//! Phone layout (narrow windows): program monitor on top, a transport row, a touch timeline
+//! ([`crate::mobile_ui`]) and a tool bar (add video, add music, text, edit, library). Export is a
+//! one-screen page. Wider windows keep the docked desktop layout. Automation ids: `mobile.*`.
 
 use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, pos2, vec2};
 use filmcraft_project::{ClipId, ItemId};
@@ -15,7 +15,7 @@ use crate::theme::Tokens;
 /// Windows narrower than this (in points) use the phone layout.
 pub const MAX_WIDTH: f32 = 720.0;
 const TOP_H: f32 = 48.0;
-const PLAY_H: f32 = 56.0;
+const PLAY_H: f32 = 52.0;
 const TOOLS_H: f32 = 72.0;
 const TOUCH: f32 = 44.0;
 
@@ -38,6 +38,12 @@ pub struct MobileState {
     pub library_open: bool,
     /// Set while the phone layout draws the Program monitor: picture only.
     pub compact_monitor: bool,
+    /// Timeline zoom in pixels per second (0 = fit on the next frame), and what it was fitted to.
+    pub pps: f64,
+    pub fit_for: Option<u64>,
+    pub fit_dur: f64,
+    /// An edge of the selected clip being dragged.
+    pub trim_drag: Option<crate::mobile_ui::TrimDrag>,
 }
 
 impl FilmcraftApp {
@@ -70,6 +76,8 @@ impl FilmcraftApp {
                 self.ui.status = e.to_string();
             }
         }
+        // the tool bar shows the clip tools while something is selected: start from the add bar
+        self.session.state.selection.clear();
     }
 
     /// An unlocked audio track that is free over `at .. at + dur`; adds one when there is none.
@@ -107,25 +115,20 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, full: Rect) {
     }
     let tools = Rect::from_min_max(pos2(full.min.x, full.max.y - TOOLS_H), full.max);
     let body_h = (tools.min.y - top.max.y).max(0.0);
-    let monitor_h = (body_h * 0.36).clamp(120.0, 360.0).min(body_h);
+    let timeline_h = (body_h * 0.34).clamp(150.0, 240.0).min(body_h * 0.6);
+    let play_h = PLAY_H.min(body_h * 0.2);
+    let monitor_h = (body_h - timeline_h - play_h).max(0.0);
     let monitor = Rect::from_min_size(pos2(full.min.x, top.max.y), vec2(full.width(), monitor_h));
-    let play = Rect::from_min_size(pos2(full.min.x, monitor.max.y), vec2(full.width(), PLAY_H.min(body_h - monitor_h).max(0.0)));
-    let timeline = Rect::from_min_max(pos2(full.min.x, play.max.y), pos2(full.max.x, tools.min.y));
-
-    // Touch-sized tracks and a narrow header column.
-    let tl = &mut app.ui.timeline;
-    tl.header_w = 100.0;
-    tl.video_track_h = tl.video_track_h.max(64.0);
-    tl.audio_track_h = tl.audio_track_h.max(56.0);
+    let play = Rect::from_min_size(monitor.left_bottom(), vec2(full.width(), play_h));
+    let timeline = Rect::from_min_max(play.left_bottom(), pos2(full.max.x, tools.min.y));
     app.ui.show_menu_bar = false;
 
     app.mobile.compact_monitor = true;
     panel(app, ui, monitor, PanelKind::Program);
     app.mobile.compact_monitor = false;
-    playbar(app, ui, play);
-    panel(app, ui, timeline, PanelKind::Timeline);
-    pinch_zoom(app, &ctx, timeline);
-    toolbar(app, ui, tools);
+    crate::mobile_ui::transport(app, ui, play);
+    crate::mobile_ui::timeline(app, ui, timeline);
+    crate::mobile_ui::toolbar(app, ui, tools);
     if app.mobile.library_open {
         library(app, ui, full);
     }
@@ -140,15 +143,6 @@ fn panel(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, p: PanelKind) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("mobile-panel", p.id())));
     child.set_clip_rect(rect);
     crate::panels::show(app, &mut child, p, rect);
-}
-
-/// Two-finger pinch zooms the timeline around its current view.
-fn pinch_zoom(app: &mut FilmcraftApp, ctx: &egui::Context, area: Rect) {
-    let (delta, over) = ctx.input(|i| (i.zoom_delta(), i.pointer.hover_pos().is_none_or(|p| area.contains(p))));
-    if over && delta.is_finite() && (delta - 1.0).abs() > 1e-3 {
-        let v = &mut app.ui.timeline;
-        v.target_pps = (v.target_pps * delta as f64).clamp(0.5, 4000.0);
-    }
 }
 
 /// A rounded touch button; returns whether it was tapped.
@@ -176,7 +170,7 @@ fn button(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, id: &str, label
     enabled && resp.clicked()
 }
 
-fn run(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: Value) {
+pub(crate) fn run(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: Value) {
     if let Err(e) = crate::menus::invoke(app, ctx, id, params) {
         app.ui.status = e;
     }
@@ -184,173 +178,36 @@ fn run(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: Value) {
 
 fn top_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
-    let ctx = ui.ctx().clone();
-    ui.painter().rect_filled(rect, 0.0, t.header_bg);
-    let pad = 6.0;
-    let mut x = rect.min.x + pad;
+    ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(0x0c, 0x0c, 0x0e));
+    let pad = 8.0;
     let cy = rect.center().y;
     if app.ui.mode != Mode::Edit {
-        let r = Rect::from_min_size(pos2(x, cy - TOUCH / 2.0), vec2(96.0, TOUCH));
+        let r = Rect::from_min_size(pos2(rect.min.x + pad, cy - TOUCH / 2.0), vec2(96.0, TOUCH));
         if button(app, ui, r, "back", "< Edit", true, false) {
             app.ui.mode = Mode::Edit;
         }
         return;
     }
-    let undo = Rect::from_min_size(pos2(x, cy - TOUCH / 2.0), vec2(TOUCH + 10.0, TOUCH));
-    if button(app, ui, undo, "undo", "Undo", app.session.history.can_undo(), false) {
-        run(app, &ctx, "edit.undo", json!({}));
-    }
-    x = undo.max.x + 4.0;
-    let redo = Rect::from_min_size(pos2(x, cy - TOUCH / 2.0), vec2(TOUCH + 10.0, TOUCH));
-    if button(app, ui, redo, "redo", "Redo", app.session.history.can_redo(), false) {
-        run(app, &ctx, "edit.redo", json!({}));
-    }
-    let export = Rect::from_min_size(pos2(rect.max.x - pad - 88.0, cy - TOUCH / 2.0), vec2(88.0, TOUCH));
+    let export = Rect::from_min_size(pos2(rect.max.x - pad - 92.0, cy - 18.0), vec2(92.0, 36.0));
     if button(app, ui, export, "export", "Export", true, true) {
         app.ui.mode = Mode::Export;
     }
-    let title = Rect::from_min_max(pos2(redo.max.x + 8.0, rect.min.y), pos2(export.min.x - 8.0, rect.max.y));
+    let title = Rect::from_min_max(pos2(rect.min.x + pad + 4.0, rect.min.y), pos2(export.min.x - 8.0, rect.max.y));
     let name = format!("{}{}", app.session.project.name, if app.session.is_dirty() { " •" } else { "" });
-    let p = ui.painter().with_clip_rect(title);
-    p.text(title.center(), Align2::CENTER_CENTER, name, Tokens::ui(14.0), t.text_dim);
+    ui.painter().with_clip_rect(title).text(pos2(title.min.x, cy), Align2::LEFT_CENTER, name, Tokens::ui(15.0), t.text);
 }
 
-fn playbar(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
-    if rect.height() < 8.0 {
-        return;
-    }
-    let t = app.tokens;
-    ui.painter().rect_filled(rect, 0.0, t.app_bg);
-    let rate = app.session.sequence_rate();
-    let head = app.session.playhead();
-    let total = app.session.active_sequence().map(|q| q.duration()).unwrap_or_default();
-    let cy = rect.center().y;
-    let w = 48.0;
-    let mut x = rect.min.x + 6.0;
-    let slot = |x: &mut f32| {
-        let r = Rect::from_min_size(pos2(*x, cy - TOUCH / 2.0), vec2(w, TOUCH));
-        *x += w + 4.0;
-        r
-    };
-    let r = slot(&mut x);
-    if button(app, ui, r, "start", "Start", true, false) {
-        app.session.set_playhead(Tick::ZERO);
-    }
-    let r = slot(&mut x);
-    let label = if app.playback.playing { "Pause" } else { "Play" };
-    if button(app, ui, r, "play", label, true, true) {
-        app.toggle_play(1.0);
-    }
-    let r = slot(&mut x);
-    if button(app, ui, r, "end", "End", true, false) {
-        app.session.set_playhead(total);
-    }
-    let tc = format_time(head, rate, false, TimeDisplay::Timecode, 48000);
-    let all = format_time(total, rate, false, TimeDisplay::Timecode, 48000);
-    ui.painter().text(pos2(rect.max.x - 10.0, cy), Align2::RIGHT_CENTER, format!("{tc}\n{all}"), Tokens::ui(12.0), t.text);
-}
-
-/// The clip a trim, split or delete applies to: a selected clip under the playhead, else the first
-/// clip under it (top video track first).
-fn clip_under_playhead(app: &FilmcraftApp) -> Option<(ClipId, Tick, Tick)> {
-    let q = app.session.active_sequence()?;
-    let at = app.session.playhead();
-    let hit = |s: Tick, e: Tick| s <= at && at < e;
-    for id in &app.session.state.selection {
-        if let Some((_, it)) = q.find_item(*id)
-            && hit(it.start, it.end())
-        {
-            return Some((it.id, it.start, it.end()));
-        }
-    }
-    q.video_tracks
-        .iter()
-        .rev()
-        .chain(q.audio_tracks.iter())
-        .flat_map(|tr| tr.items.iter())
-        .find(|it| hit(it.start, it.end()))
-        .map(|it| (it.id, it.start, it.end()))
-}
-
-fn add_media(app: &mut FilmcraftApp, ctx: &egui::Context, place: Place) {
+pub(crate) fn add_media(app: &mut FilmcraftApp, ctx: &egui::Context, place: Place) {
     app.mobile.place = Some(place);
     let id = if place == Place::Playhead { "file.importAudio" } else { "file.import" };
     run(app, ctx, id, json!({}));
 }
 
 /// Trim a clip edge to the playhead, closing the gap when the other tracks allow it.
-fn trim(app: &mut FilmcraftApp, ctx: &egui::Context, clip: ClipId, edge: &str, delta: i64) {
+pub(crate) fn trim(app: &mut FilmcraftApp, ctx: &egui::Context, clip: ClipId, edge: &str, delta: i64) {
     let ripple = json!({"clip": clip.0, "edge": edge, "mode": "ripple", "delta": delta});
     if app.session.execute("timeline.trim", ripple).is_err() {
         run(app, ctx, "timeline.trim", json!({"clip": clip.0, "edge": edge, "mode": "regular", "delta": delta}));
-    }
-}
-
-fn toolbar(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
-    let t = app.tokens;
-    let ctx = ui.ctx().clone();
-    ui.painter().rect_filled(rect, 0.0, t.header_bg);
-    let clip = clip_under_playhead(app);
-    let have_clip = clip.is_some();
-    let head = app.session.playhead();
-    let tools: [(&str, &str, bool); 9] = [
-        ("add", "+ Video", true),
-        ("music", "+ Music", true),
-        ("split", "Split", have_clip),
-        ("trim-in", "Trim in", have_clip),
-        ("trim-out", "Trim out", have_clip),
-        ("delete", "Delete", have_clip),
-        ("library", "Library", true),
-        ("text", "Text", true),
-        ("fit", "Fit", true),
-    ];
-
-    let w = 74.0;
-    let inner = Rect::from_min_max(pos2(rect.min.x, rect.min.y + 6.0), pos2(rect.max.x, rect.max.y - 6.0));
-    let mut tapped: Option<&str> = None;
-    let mut tools_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner).id_salt("mobile-tools-ui"));
-    egui::ScrollArea::horizontal().id_salt("mobile-tools").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(
-        &mut tools_ui,
-        |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                for (id, label, enabled) in tools {
-                    let (r, _) = ui.allocate_exact_size(vec2(w, inner.height()), Sense::hover());
-                    if button(app, ui, r, id, label, enabled, false) {
-                        tapped = Some(id);
-                    }
-                }
-            });
-        },
-    );
-    let Some(tap) = tapped else { return };
-    match tap {
-        "add" => add_media(app, &ctx, Place::Append),
-        "music" => add_media(app, &ctx, Place::Playhead),
-        "library" => app.mobile.library_open = true,
-        "split" => run(app, &ctx, "sequence.addEdit", json!({"time": head.0})),
-        "trim-in" => {
-            if let Some((id, start, _)) = clip {
-                trim(app, &ctx, id, "in", (head - start).0);
-            }
-        }
-        "trim-out" => {
-            if let Some((id, _, end)) = clip {
-                trim(app, &ctx, id, "out", (head - end).0);
-            }
-        }
-        "delete" => {
-            if let Some((id, _, _)) = clip {
-                app.session.state.selection = vec![id];
-                // close the gap when the other tracks allow it, else leave it
-                if app.session.execute("edit.rippleDelete", json!({})).is_err() {
-                    run(app, &ctx, "edit.clear", json!({}));
-                }
-            }
-        }
-        "text" => run(app, &ctx, "graphics.newText", json!({})),
-        "fit" => app.ui.timeline.fit_pending = true,
-        _ => {}
     }
 }
 

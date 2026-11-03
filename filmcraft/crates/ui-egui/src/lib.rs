@@ -18,6 +18,7 @@ pub mod icons;
 pub mod links;
 pub mod menus;
 pub mod mobile;
+pub mod mobile_ui;
 pub mod panels;
 pub mod perf;
 #[cfg(not(target_arch = "wasm32"))]
