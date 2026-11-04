@@ -11,6 +11,8 @@ use crate::FilmcraftApp;
 use crate::mobile::{Place, add_media, run, trim};
 use crate::theme::Tokens;
 
+/// Width in pixels of the timeline thumbnails (one size, so cached frames are reused).
+const THUMB_PX: u32 = 128;
 const RULER_H: f32 = 26.0;
 const HANDLE_W: f32 = 14.0;
 const BG: Color32 = Color32::from_rgb(0x0c, 0x0c, 0x0e);
@@ -355,7 +357,6 @@ pub fn timeline(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
 
     // clips
-    let ppp = ctx.pixels_per_point();
     let trim_drag = app.mobile.trim_drag;
     let mut handle_rects: Option<(ClipId, Rect, Rect, Rect)> = None;
     for (r, rr) in rows.iter().zip(&row_rects) {
@@ -380,7 +381,12 @@ pub fn timeline(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             lane.rect_filled(cr, CornerRadius::same(4), if r.video { VIDEO } else { AUDIO });
             if r.video && rr.height() >= 36.0 {
                 let tile_h = rr.height() - 4.0;
-                let tile_w = (tile_h * aspect).clamp(18.0, 160.0);
+                // Few, wide tiles (each is a frame decode), cropped to fill.
+                let tile_w = (tile_h * aspect).clamp(44.0, 160.0);
+                // One frame per grid step, so scrubbing and zooming reuse cached thumbnails
+                // instead of decoding a new frame every time a tile moves a pixel.
+                let tile_secs = tile_w as f64 / pps;
+                let grid = [0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0].into_iter().find(|g| *g >= tile_secs).unwrap_or(120.0);
                 let skip = ((rect.min.x - x0) / tile_w).floor().max(0.0) as u32;
                 for k in skip..skip + 40 {
                     let tx = x0 + k as f32 * tile_w;
@@ -388,11 +394,14 @@ pub fn timeline(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         break;
                     }
                     let w = (x1 - tx).min(tile_w);
-                    let at = c.source_in + Tick::from_seconds_f64(((tx + w * 0.5 - x0) as f64 / pps).max(0.0));
-                    let px = (tile_w * ppp).round().clamp(32.0, 512.0) as u32;
-                    if let Some((tex, _)) = app.thumbnail(&ctx, c.item, at, px) {
+                    let rel = ((tx - x0) as f64 / pps).max(0.0);
+                    let at = c.source_in + Tick::from_seconds_f64((rel / grid).floor() * grid + grid * 0.5);
+                    if let Some((tex, size)) = app.thumbnail(&ctx, c.item, at, THUMB_PX) {
                         let tr = Rect::from_min_size(pos2(tx, rr.min.y + 2.0), vec2(w, tile_h));
-                        lane.image(tex, tr, Rect::from_min_max(pos2(0.0, 0.0), pos2(w / tile_w, 1.0)), Color32::WHITE);
+                        let (sa, ta) = (size.x / size.y.max(1.0), tile_w / tile_h.max(1.0));
+                        let (cu, cv) = if sa >= ta { (ta / sa, 1.0) } else { (1.0, sa / ta) };
+                        let (u0, v0) = ((1.0 - cu) * 0.5, (1.0 - cv) * 0.5);
+                        lane.image(tex, tr, Rect::from_min_max(pos2(u0, v0), pos2(u0 + cu * w / tile_w, v0 + cv)), Color32::WHITE);
                     }
                 }
             } else if cr.width() > 20.0 {

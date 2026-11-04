@@ -299,7 +299,7 @@ fn web(args: &[String]) -> Result<(), String> {
         // optional: smaller and faster (binaryen); skipped when not installed
         let opt = dist.join("filmcraft_web_opt.wasm");
         run(Command::new("wasm-opt")
-            .args(["-O2", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals"])
+            .args(["-O2", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-simd"])
             .arg(&bg)
             .arg("-o")
             .arg(&opt))?;

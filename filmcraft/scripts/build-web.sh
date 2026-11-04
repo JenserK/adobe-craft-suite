@@ -31,6 +31,21 @@ if [ "${1:-}" = "--ci" ]; then
       cargo install wasm-bindgen-cli --version "$WBG" --locked
     fi
   fi
+
+  # wasm-opt (binaryen) makes the wasm smaller and faster; `cargo xtask web` uses it when found.
+  # Best effort: a failed download or a binary that does not run just skips it.
+  # Set FILMCRAFT_NO_WASM_OPT=1 to build without it.
+  if [ -z "${FILMCRAFT_NO_WASM_OPT:-}" ] && ! command -v wasm-opt >/dev/null 2>&1; then
+    BV="version_119"
+    if curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/$BV/binaryen-$BV-x86_64-linux.tar.gz" \
+        | tar xz -C "$HOME/.cargo/bin" --strip-components=2 "binaryen-$BV/bin/wasm-opt" 2>/dev/null \
+      && wasm-opt --version >/dev/null 2>&1; then
+      echo "wasm-opt: $(wasm-opt --version)"
+    else
+      echo "wasm-opt: not available, building without it" >&2
+      rm -f "$HOME/.cargo/bin/wasm-opt"
+    fi
+  fi
 fi
 
 cargo xtask web

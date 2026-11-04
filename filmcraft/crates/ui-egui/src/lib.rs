@@ -798,6 +798,15 @@ impl FilmcraftApp {
     // ---------------------------------------------------------------- textures
 
     /// Upload a rendered frame into a named texture (only when the key changed).
+    /// Timeline and Project thumbnails get a texture per frame they show: drop them all (they come
+    /// back for what is visible) before they pile up in GPU memory. Runs before anything is drawn.
+    fn trim_thumb_textures(&mut self) {
+        const MAX_THUMBS: usize = 240;
+        if self.textures.keys().filter(|k| k.starts_with("thumb-")).count() > MAX_THUMBS {
+            self.textures.retain(|k, _| !k.starts_with("thumb-"));
+        }
+    }
+
     pub fn texture_for(&mut self, ctx: &egui::Context, name: &str, key: FrameKey, img: &frames::Rgba) -> egui::TextureId {
         if let Some((k, tex)) = self.textures.get_mut(name) {
             if *k != key {
@@ -1153,6 +1162,7 @@ impl FilmcraftApp {
             crash::injected_fault("injected UI fault");
         }
         let ctx = ui.ctx().clone();
+        self.trim_thumb_textures();
         self.auto.begin_frame();
         self.frames.set_context(&ctx);
         self.session.poll_persistence();
@@ -1475,7 +1485,9 @@ impl eframe::App for FilmcraftApp {
         }
         // No frame worker threads on the web: render queued frames here, within a time budget
         // that leaves room for the UI pass (a no-op where workers run).
-        self.frames.pump(std::time::Duration::from_millis(if self.playback.playing { 24 } else { 40 }));
+        // A phone gets less per frame while idle: a long decode job would block touch handling.
+        let idle_ms = if mobile::is_mobile(ui.ctx().content_rect()) { 14 } else { 40 };
+        self.frames.pump(std::time::Duration::from_millis(if self.playback.playing { 24 } else { idle_ms }));
         // A panic in one panel must not close the app (losing unsaved work) or leave a blank
         // window: catch it, keep the session, and say what happened.
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.frame(ui))).is_err() {

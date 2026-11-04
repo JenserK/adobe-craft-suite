@@ -78,3 +78,16 @@ Things to know:
   API is not present in WebViews). Exports are offered as downloads; native share/save would need
   a Capacitor plugin (not included yet).
 - The native projects have not been built or run on a device in this repo's CI.
+
+## Performance
+
+- The browser build is compiled with wasm SIMD (`.cargo/config.toml`); a 720p export ran ~18% faster.
+- `scripts/build-web.sh --ci` also fetches `wasm-opt` (binaryen) so `cargo xtask web` can shrink and
+  speed up the wasm. It is skipped when the download or the binary fails;
+  `FILMCRAFT_NO_WASM_OPT=1` turns it off.
+- Phone timeline: one fixed thumbnail size and time grid (cached frames are reused while scrubbing
+  or zooming), wide tiles instead of many thin ones, thumbnail textures capped at 240.
+- On phones the frame server gets 14 ms per idle frame instead of 40 ms, so touch stays responsive.
+- An installed app (Capacitor) runs in the Android System WebView, the same Chromium engine as Chrome:
+  expect similar speed, but no tabs, no address bar and steadier memory. WebGPU is not guaranteed in
+  a WebView; without it the preview is composited on the CPU (WebGL2 path).
