@@ -135,7 +135,6 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
     api::install()?;
     import::install_drop_handlers()?;
 
-    let demo = !query_flag("empty");
     let mut web_options = eframe::WebOptions::default();
     // `?webgl`: WebGL2 only. The page reloads with it when starting on WebGPU fails (an adapter
     // whose device can't be created, a driver the browser rejects…); see `index.html`.
@@ -172,8 +171,6 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                         }
                         Err(e) => log::warn!("recovery failed: {e}"),
                     }
-                } else if demo {
-                    let _ = session.execute("file.openDemoProject", json!({}));
                 }
                 let mut app = FilmcraftApp::new(session);
                 import::install_hooks(&mut app);

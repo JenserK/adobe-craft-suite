@@ -36,6 +36,8 @@ pub enum Place {
 pub struct MobileState {
     pub place: Option<Place>,
     pub library_open: bool,
+    /// The "start a new project?" question is showing.
+    pub confirm_new: bool,
     /// Set while the phone layout draws the Program monitor: picture only.
     pub compact_monitor: bool,
     /// Timeline zoom in pixels per second (0 = fit on the next frame), and what it was fitted to.
@@ -123,14 +125,27 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, full: Rect) {
     let timeline = Rect::from_min_max(play.left_bottom(), pos2(full.max.x, tools.min.y));
     app.ui.show_menu_bar = false;
 
-    app.mobile.compact_monitor = true;
-    panel(app, ui, monitor, PanelKind::Program);
-    app.mobile.compact_monitor = false;
+    if app.session.active_sequence().is_some() {
+        app.mobile.compact_monitor = true;
+        panel(app, ui, monitor, PanelKind::Program);
+        app.mobile.compact_monitor = false;
+    } else {
+        ui.painter().rect_filled(monitor, 0.0, Color32::BLACK);
+        ui.painter().text(monitor.center() - vec2(0.0, 52.0), Align2::CENTER_CENTER, "Your project is empty", Tokens::ui(16.0), t.text_dim);
+        let add = Rect::from_center_size(monitor.center() + vec2(0.0, 4.0), vec2(200.0, 52.0));
+        if button(app, ui, add, "add-first", "Add video", true, true) {
+            add_media(app, &ctx, Place::Append);
+        }
+        ui.painter().text(monitor.center() + vec2(0.0, 56.0), Align2::CENTER_CENTER, "or add music, text or media below", Tokens::ui(12.5), t.text_dim);
+    }
     crate::mobile_ui::transport(app, ui, play);
     crate::mobile_ui::timeline(app, ui, timeline);
     crate::mobile_ui::toolbar(app, ui, tools);
     if app.mobile.library_open {
         library(app, ui, full);
+    }
+    if app.mobile.confirm_new {
+        confirm_new(app, ui, full);
     }
     crate::panels::dialogs::show(app, &ctx);
 }
@@ -188,11 +203,15 @@ fn top_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         return;
     }
-    let export = Rect::from_min_size(pos2(rect.max.x - pad - 92.0, cy - 18.0), vec2(92.0, 36.0));
+    let export = Rect::from_min_size(pos2(rect.max.x - pad - 84.0, cy - 18.0), vec2(84.0, 36.0));
+    let new = Rect::from_min_size(pos2(export.min.x - 8.0 - 64.0, cy - 18.0), vec2(64.0, 36.0));
+    if button(app, ui, new, "new", "New", true, false) {
+        app.mobile.confirm_new = true;
+    }
     if button(app, ui, export, "export", "Export", true, true) {
         app.ui.mode = Mode::Export;
     }
-    let title = Rect::from_min_max(pos2(rect.min.x + pad + 4.0, rect.min.y), pos2(export.min.x - 8.0, rect.max.y));
+    let title = Rect::from_min_max(pos2(rect.min.x + pad + 4.0, rect.min.y), pos2(new.min.x - 8.0, rect.max.y));
     let name = format!("{}{}", app.session.project.name, if app.session.is_dirty() { " •" } else { "" });
     ui.painter().with_clip_rect(title).text(pos2(title.min.x, cy), Align2::LEFT_CENTER, name, Tokens::ui(15.0), t.text);
 }
@@ -209,6 +228,46 @@ pub(crate) fn trim(app: &mut FilmcraftApp, ctx: &egui::Context, clip: ClipId, ed
     if app.session.execute("timeline.trim", ripple).is_err() {
         run(app, ctx, "timeline.trim", json!({"clip": clip.0, "edge": edge, "mode": "regular", "delta": delta}));
     }
+}
+
+/// Start over: a new, empty project. Asks first, because it drops everything in this one.
+fn confirm_new(app: &mut FilmcraftApp, ui: &mut egui::Ui, full: Rect) {
+    let t = app.tokens;
+    ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(190));
+    // swallow taps outside the box
+    ui.interact(full, egui::Id::new("mobile-new-shield"), Sense::click_and_drag());
+    let w = (full.width() - 32.0).min(360.0);
+    let card = Rect::from_center_size(full.center(), vec2(w, 190.0));
+    ui.painter().rect_filled(card, CornerRadius::same(14), t.panel_bg);
+    ui.painter().text(pos2(card.center().x, card.min.y + 34.0), Align2::CENTER_CENTER, "Start a new project?", Tokens::semibold(17.0), t.text);
+    let note = Rect::from_min_size(pos2(card.min.x + 16.0, card.min.y + 58.0), vec2(w - 32.0, 50.0));
+    ui.painter().with_clip_rect(note).text(
+        note.center_top(),
+        Align2::CENTER_TOP,
+        "Everything in the current project\nis removed. Your files stay on your phone.",
+        Tokens::ui(13.0),
+        t.text_dim,
+    );
+    let b = |i: f32| Rect::from_min_size(pos2(card.min.x + 16.0 + i * ((w - 32.0) / 2.0 + 4.0), card.max.y - 62.0), vec2((w - 32.0) / 2.0 - 4.0, 46.0));
+    if button(app, ui, b(0.0), "new-cancel", "Cancel", true, false) {
+        app.mobile.confirm_new = false;
+    }
+    if button(app, ui, b(1.0), "new-go", "New project", true, true) {
+        new_project(app);
+    }
+}
+
+/// Replace the project with an empty one and reset the phone view.
+pub(crate) fn new_project(app: &mut FilmcraftApp) {
+    app.stop();
+    match app.session.execute("file.newProject", json!({"name": "Untitled"})) {
+        Ok(_) => {
+            app.mobile = MobileState::default();
+            app.ui.status = "New project".into();
+        }
+        Err(e) => app.ui.status = e.to_string(),
+    }
+    app.mobile.confirm_new = false;
 }
 
 /// A sheet over the lower half with the Project bin and "Add to timeline" for the selected items.

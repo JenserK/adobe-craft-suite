@@ -310,11 +310,27 @@ pub fn timeline(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         && let Some(pos) = body.interact_pointer_pos()
     {
         let secs = head + (pos.x - cx) as f64 / pps;
+        // Thin or tiny clips are hard to hit: take the nearest clip within ~18 px.
+        let tol = 18.0 / pps;
         let hit = rows
             .iter()
             .zip(&row_rects)
-            .filter(|(_, rr)| pos.y >= rr.min.y && pos.y <= rr.max.y)
-            .find_map(|(r, _)| r.clips.iter().find(|c| c.start.seconds() <= secs && secs < c.end.seconds()).map(|c| c.id));
+            .filter(|(_, rr)| pos.y >= rr.min.y - 4.0 && pos.y <= rr.max.y + 4.0)
+            .flat_map(|(r, _)| r.clips.iter())
+            .map(|c| {
+                let (a, b) = (c.start.seconds(), c.end.seconds());
+                let d = if secs < a {
+                    a - secs
+                } else if secs > b {
+                    secs - b
+                } else {
+                    0.0
+                };
+                (d, c.id)
+            })
+            .filter(|(d, _)| *d <= tol)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, id)| id);
         match hit {
             Some(id) if app.session.state.selection.first() != Some(&id) => app.session.state.selection = vec![id],
             _ => app.session.state.selection.clear(),
@@ -349,6 +365,8 @@ pub fn timeline(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             if x1 < rect.min.x - 4.0 || x0 > rect.max.x + 4.0 {
                 continue;
             }
+            // never thinner than a few pixels, so every clip can be seen and tapped
+            x1 = x1.max(x0 + 6.0);
             // the clip being trimmed follows the finger
             if let Some(d) = trim_drag.filter(|d| d.clip == c.id) {
                 if d.in_edge {

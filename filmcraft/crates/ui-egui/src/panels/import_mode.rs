@@ -20,8 +20,6 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let ctx = ui.ctx().clone();
     let cards = [
         ("Browse files…", "file.import", "Movies, audio and stills from disk"),
-        ("Demo footage", "file.importDemoFootage", "Six procedural 1080p clips with sound"),
-        ("Demo project", "file.openDemoProject", "A cut sequence with transitions, effects and music"),
         ("Bars and Tone", "file.newBarsAndTone", "SMPTE HD bars with 1 kHz reference tone"),
     ];
     let cw = 260.0;

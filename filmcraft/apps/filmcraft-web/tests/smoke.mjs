@@ -4,7 +4,7 @@
 //   cargo xtask web --serve 8765 &            # build + serve target/web/dist
 //   node apps/filmcraft-web/tests/smoke.mjs --url http://127.0.0.1:8765/ --media clip.mp4 --out /tmp/fc-web
 //
-// Steps: load (timing), demo project, play 2 s (frames shown/dropped), import the media through
+// Steps: load (timing), empty start, play 2 s (frames shown/dropped), import the media through
 // `filmcraft.importUrl`, put it on a new sequence, export H.264 (download), screenshots of each
 // step; then every mode and a tiny window. `--media` must be reachable from the page (copy it next
 // to index.html). Prints a JSON report; exits non-zero on failure, including any Rust panic or

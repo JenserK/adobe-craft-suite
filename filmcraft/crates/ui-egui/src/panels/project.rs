@@ -615,7 +615,7 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
     }
 }
 
-pub const NEW_ITEMS: [(&str, &str); 8] = [
+pub const NEW_ITEMS: [(&str, &str); 7] = [
     ("Sequence…", "file.newSequence"),
     ("Adjustment Layer…", "file.newAdjustmentLayer"),
     ("Bars and Tone…", "file.newBarsAndTone"),
@@ -623,7 +623,6 @@ pub const NEW_ITEMS: [(&str, &str); 8] = [
     ("Color Matte…", "file.newColorMatte"),
     ("Universal Counting Leader…", "file.newCountingLeader"),
     ("Transparent Video…", "file.newTransparentVideo"),
-    ("Demo Footage", "file.importDemoFootage"),
 ];
 
 pub fn new_item_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui, pre: &str, actions: &mut Actions) {
